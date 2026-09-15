@@ -16,3 +16,6 @@ __pycache__/
 
 # os
 .DS_Store
+
+# working report drafts stay local (submitted via Turnitin, not the repo)
+report/*.docx
