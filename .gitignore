@@ -1,0 +1,18 @@
+# data and outputs are reproducible — never commit them
+data/
+outputs/
+*.pt
+*.zip
+
+# secrets
+kaggle.json
+.kaggle/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# os
+.DS_Store
