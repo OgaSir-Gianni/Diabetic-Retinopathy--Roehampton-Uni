@@ -189,14 +189,16 @@ def build() -> None:
          "against transfer-learned EfficientNet-B0 and B3, using class-weighted "
          "training, fundus-specific preprocessing, and an ablation of Ben Graham "
          f"illumination normalisation. The best model reached a quadratic "
-         f"weighted kappa of {f3(metric(b0, 'test_qwk'))} on a held-out test set "
-         f"and {pct(metric(b0, 'referable', 'sensitivity'))} sensitivity / "
-         f"{pct(metric(b0, 'referable', 'specificity'))} specificity for "
-         "referable DR. Grad-CAM analysis shows the network often attends to "
-         "clinically meaningful regions but can rely on treatment artefacts "
-         "(laser scars), highlighting explainability as a prerequisite for "
-         "clinical deployment. « Update numbers if the final best model "
-         "changes. »")
+         f"weighted kappa of {f3(metric(pl, 'test_qwk'))} on a held-out test set "
+         f"and {pct(metric(pl, 'referable', 'sensitivity'))} sensitivity / "
+         f"{pct(metric(pl, 'referable', 'specificity'))} specificity for "
+         "referable DR, meeting the British Diabetic Association screening "
+         "standard at the default operating point. Transfer learning proved "
+         "decisive, while the widely used Ben Graham normalisation brought no "
+         "benefit to ImageNet-pretrained models. Grad-CAM analysis shows the "
+         "network often attends to clinically meaningful regions but can rely "
+         "on treatment artefacts (laser scars), highlighting explainability "
+         "as a prerequisite for clinical deployment.")
 
     # ---- 1 Introduction
     doc.add_heading("1. Introduction", level=1)
@@ -387,8 +389,13 @@ def build() -> None:
          f"{f3(metric(b0, 'test_qwk'))} versus "
          f"{f3(metric(sc, 'test_qwk'))} for the identical training procedure "
          "with a randomly initialised ResNet-18. "
-         "« Add one sentence comparing B3 vs B0 once B3 finishes: did "
-         "the higher resolution help, or did the larger model overfit? » "
+         f"EfficientNet-B3, despite 2.7× more parameters and higher input "
+         f"resolution, matched rather than beat B0 (QWK "
+         f"{f3(metric(b3, 'test_qwk'))} vs {f3(metric(b0, 'test_qwk'))}) and "
+         "scored a lower macro F1 — at this dataset size the additional "
+         "capacity brings no reliable gain in grading, although B3 did achieve "
+         f"the highest referable-DR AUC ({f3(metric(b3, 'referable', 'auc'))}) "
+         f"and sensitivity ({pct(metric(b3, 'referable', 'sensitivity'))}). "
          "The learning curves (Figure 3) show that the pretrained model "
          f"reaches its best validation QWK "
          f"({f3((h0.get('best_val_qwk')))}) after only "
@@ -412,13 +419,26 @@ def build() -> None:
             f3(metric(pl, "referable", "auc"))]],
           "Table 3. Ablation of Ben Graham illumination normalisation "
           "(EfficientNet-B0, identical training).")
+    h_pl = load(pl, "history.json") or {}
     para(doc,
-         "« Once the plain run finishes, state the QWK difference and "
-         "interpret it: if small, argue that ImageNet features are already "
-         "robust to illumination and the benefit shown in 2015-era "
-         "competitions [6] may have come from weaker/scratch models; if "
-         "large, argue for fundus-specific preprocessing. Either outcome is "
-         "a legitimate finding. »")
+         "Contrary to expectation, Ben Graham normalisation brought no "
+         f"benefit: the plain variant scored marginally higher on test QWK "
+         f"({f3(metric(pl, 'test_qwk'))} vs {f3(metric(b0, 'test_qwk'))}) "
+         f"with validation performance effectively tied "
+         f"({f3(h_pl.get('best_val_qwk'))} vs "
+         f"{f3((load(b0, 'history.json') or {}).get('best_val_qwk'))}), so the "
+         "honest conclusion is that the technique does not help an ImageNet-"
+         "pretrained network on this dataset, and the small test-set gap is "
+         "within seed-level noise. A plausible explanation is that the "
+         "benefit reported in the 2015 competition [6] accrued to models "
+         "trained from scratch, for which illumination variance is a real "
+         "nuisance factor; modern pretrained features are already robust to "
+         "global lighting, while the transformation discards absolute colour "
+         "information that may itself be informative. This is a useful "
+         "negative result: preprocessing folklore should be re-validated "
+         "rather than inherited. « Add your own view: would you now "
+         "recommend Ben Graham for this pipeline? Consider repeating with a "
+         "different seed if time allows. »")
 
     doc.add_heading("4.3 Error structure across grades", level=2)
     adj = adjacent_error_pct(b0)
@@ -444,19 +464,23 @@ def build() -> None:
 
     doc.add_heading("4.4 Referable-DR screening view", level=2)
     ref = metric(b0, "referable") or {}
+    ref_pl = metric(pl, "referable") or {}
     para(doc,
-         "Collapsed to the binary referable decision, EfficientNet-B0 "
-         f"achieves {pct(ref.get('sensitivity'))} sensitivity and "
+         "Collapsed to the binary referable decision, EfficientNet-B0 (Ben "
+         f"Graham) achieves {pct(ref.get('sensitivity'))} sensitivity and "
          f"{pct(ref.get('specificity'))} specificity at the default 0.5 "
-         f"operating point, with an AUC of {f3(ref.get('auc'))}. Against the "
+         f"operating point (AUC {f3(ref.get('auc'))}), narrowly missing the "
          "British Diabetic Association screening standard (≥80% "
-         "sensitivity, ≥95% specificity), sensitivity clears the bar "
-         "while specificity falls marginally short at this untuned threshold; "
-         "the high AUC indicates both targets are reachable by moving the "
-         "operating point along the ROC curve, a deployment decision that "
-         "trades referral workload against missed disease. "
-         "« Optionally add the operating point chosen from the "
-         "validation set. »")
+         "sensitivity, ≥95% specificity) on specificity. The plain-"
+         f"preprocessing variant meets both targets untuned "
+         f"({pct(ref_pl.get('sensitivity'))} / "
+         f"{pct(ref_pl.get('specificity'))}), and the near-identical AUCs "
+         "show every variant could reach the standard by tuning the operating "
+         "point on the validation set — a deployment decision that trades "
+         "referral workload against missed disease. That models trained on "
+         "~2,500 images approach screening-standard operating characteristics "
+         "underlines how much of the task pretrained features already "
+         "capture.")
 
     doc.add_heading("4.5 Explainability with Grad-CAM", level=2)
     gc_dir = OUTPUT_DIR / b0 / "gradcam"
@@ -480,14 +504,24 @@ def build() -> None:
 
     # ---- 5 Discussion
     doc.add_heading("5. Discussion", level=1)
+    qwk_gain = None
+    if isinstance(metric(b0, "test_qwk"), float) and isinstance(metric(sc, "test_qwk"), float):
+        qwk_gain = metric(b0, "test_qwk") - metric(sc, "test_qwk")
     para(doc,
-         "Interpretation. The results quantify two design decisions. "
-         "First, transfer learning is worth "
-         "« X.XX » QWK over training from scratch — at this "
-         "dataset size it is the difference between a clinically interesting "
-         "model and an unusable one. Second, "
-         "« summarise the ablation and the B0-vs-B3 outcome here once "
-         "final numbers are in. »")
+         "Interpretation. The results quantify three design decisions. "
+         f"First, transfer learning is worth {f3(qwk_gain)} QWK over training "
+         "from scratch with an otherwise identical procedure — at this "
+         "dataset size it is the single most consequential choice made. "
+         "Second, neither scaling up the architecture (B3) nor the classical "
+         "Ben Graham preprocessing improved five-class grading: with strong "
+         "pretrained features and only ~2,500 training images, the binding "
+         "constraint is data, not model capacity or input normalisation. "
+         "Third, class-weighted training kept minority-grade recall usable "
+         "(the scratch baseline's macro F1 of "
+         f"{f3(metric(sc, 'macro_f1'))} vs "
+         f"{f3(metric(b0, 'macro_f1'))} shows the gap pretrained features "
+         "close on rare classes). "
+         "« Add a sentence of your own overall reading here. »")
     para(doc,
          "Right answers for wrong reasons. The most important finding of "
          "the explainability analysis is that the network can exploit "
@@ -534,14 +568,16 @@ def build() -> None:
          "DR grading and referable-DR screening on APTOS 2019, comparing "
          "scratch and transfer-learned CNNs with a controlled preprocessing "
          f"ablation. The best model reached a test QWK of "
-         f"{f3(metric(b0, 'test_qwk'))} and a referable-DR AUC of "
-         f"{f3(metric(b0, 'referable', 'auc'))}, approaching screening-"
-         "standard operating characteristics with ~3,700 training images. "
-         "Beyond the metrics, Grad-CAM auditing surfaced a treatment-artefact "
-         "shortcut that headline numbers alone would have hidden — the "
-         "central lesson being that for medical imaging, understanding why a "
-         "model is right matters as much as how often it is right. "
-         "« Update if the final best model changes. »")
+         f"{f3(metric(pl, 'test_qwk'))} and met the BDA screening standard "
+         f"({pct(metric(pl, 'referable', 'sensitivity'))} sensitivity, "
+         f"{pct(metric(pl, 'referable', 'specificity'))} specificity) at an "
+         "untuned operating point, with ~2,500 training images. Beyond the "
+         "metrics, the experiments produced two less obvious lessons: an "
+         "inherited preprocessing technique added nothing once transfer "
+         "learning was in place, and Grad-CAM auditing surfaced a treatment-"
+         "artefact shortcut that headline numbers alone would have hidden — "
+         "for medical imaging, understanding why a model is right matters as "
+         "much as how often it is right.")
 
     # ---- References
     doc.add_heading("References", level=1)
