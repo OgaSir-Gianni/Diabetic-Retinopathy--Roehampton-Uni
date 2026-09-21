@@ -7,3 +7,4 @@ opencv-python-headless
 matplotlib
 tqdm
 kaggle>=2.2
+python-docx   # report/build_report.py only

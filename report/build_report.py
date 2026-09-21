@@ -60,6 +60,32 @@ def pct(x) -> str:
     return f"{x * 100:.1f}%" if isinstance(x, (int, float)) else PEND
 
 
+def num(x):
+    """The value if numeric, else None (json ints and floats both count)."""
+    return x if isinstance(x, (int, float)) else None
+
+
+def delta(a, b):
+    """a - b when both are numeric, else None (f3 renders None as pending)."""
+    return a - b if num(a) is not None and num(b) is not None else None
+
+
+# British Diabetic Association screening standard for referable DR.
+BDA_SENS, BDA_SPEC = 0.80, 0.95
+
+
+def bda_shortfall(ref: dict):
+    """None if the operating point meets the BDA standard, otherwise the name
+    of the failing metric(s); 'unknown' when values are missing."""
+    s, p = num(ref.get("sensitivity")), num(ref.get("specificity"))
+    if s is None or p is None:
+        return "unknown"
+    misses = [name for name, value, bar in
+              [("sensitivity", s, BDA_SENS), ("specificity", p, BDA_SPEC)]
+              if value < bar]
+    return " and ".join(misses) or None
+
+
 def metric(run: str, *keys):
     m = load(run, "metrics.json")
     for k in keys:
@@ -159,6 +185,15 @@ def table(doc: Document, header: list, rows: list, cap: str) -> None:
 def build() -> None:
     b0, sc, b3, pl = ("efficientnet_b0_ben", "resnet18_scratch_ben",
                       "efficientnet_b3_ben", "efficientnet_b0_plain")
+
+    # Shared, computed once: every directional claim below derives from these,
+    # so a regeneration with different data changes the wording, not just the
+    # numbers.
+    qwks = {r: num(metric(r, "test_qwk")) for r in RUNS}
+    best = max(RUNS, key=lambda r: qwks[r] if qwks[r] is not None else -1.0)
+    best_ref = metric(best, "referable") or {}
+    best_bda = bda_shortfall(best_ref)  # None = meets the standard
+
     doc = Document()
     style_document(doc)
 
@@ -188,15 +223,17 @@ def build() -> None:
          "dataset (3,662 images). A ResNet-18 trained from scratch is compared "
          "against transfer-learned EfficientNet-B0 and B3, using class-weighted "
          "training, fundus-specific preprocessing, and an ablation of Ben Graham "
-         f"illumination normalisation. The best model reached a quadratic "
-         f"weighted kappa of {f3(metric(pl, 'test_qwk'))} on a held-out test set "
-         f"and {pct(metric(pl, 'referable', 'sensitivity'))} sensitivity / "
-         f"{pct(metric(pl, 'referable', 'specificity'))} specificity for "
-         "referable DR, meeting the British Diabetic Association screening "
-         "standard at the default operating point. Transfer learning proved "
-         "decisive, while the widely used Ben Graham normalisation brought no "
-         "benefit to ImageNet-pretrained models. Grad-CAM analysis shows the "
-         "network often attends to clinically meaningful regions but can rely "
+         f"illumination normalisation. The best configuration "
+         f"({RUNS[best]}) reached a quadratic weighted kappa of "
+         f"{f3(qwks[best])} on a held-out test set and "
+         f"{pct(best_ref.get('sensitivity'))} sensitivity / "
+         f"{pct(best_ref.get('specificity'))} specificity for referable DR, "
+         f"{'meeting' if best_bda is None else 'approaching'} the British "
+         "Diabetic Association screening standard at the default operating "
+         "point. Transfer learning proved decisive, while the widely used "
+         "Ben Graham normalisation brought no benefit to ImageNet-pretrained "
+         "models. Grad-CAM analysis of the transfer-learned models shows "
+         "attention often falls on clinically meaningful regions but can rely "
          "on treatment artefacts (laser scars), highlighting explainability "
          "as a prerequisite for clinical deployment.")
 
@@ -368,7 +405,7 @@ def build() -> None:
 
     doc.add_heading("4.1 Model comparison", level=2)
     rows = []
-    for run in [sc, b0, b3]:
+    for run in [sc, b0, pl, b3]:
         rows.append([RUNS[run],
                      f3(metric(run, "test_qwk")),
                      f3(metric(run, "test_accuracy")),
@@ -383,19 +420,29 @@ def build() -> None:
           "Table 2. Held-out test-set results (550 images). Referable DR = "
           "grade ≥ 2.")
     h0 = load(b0, "history.json") or {}
+    d_b3 = delta(qwks[b3], qwks[b0])
+    b3_word = ("outperformed" if d_b3 is not None and d_b3 > 0
+               else "matched rather than beat")
+    f1_gap = delta(num(metric(b3, "macro_f1")), num(metric(b0, "macro_f1")))
+    f1_word = "higher" if f1_gap is not None and f1_gap > 0 else "lower"
+    aucs = {r: num(metric(r, "referable", "auc")) for r in RUNS}
+    b3_top_auc = (aucs[b3] is not None
+                  and aucs[b3] >= max(a for a in aucs.values() if a is not None))
+    b3_clause = (
+        f", although B3 did achieve the highest referable-DR AUC "
+        f"({f3(aucs[b3])}) and sensitivity "
+        f"({pct(metric(b3, 'referable', 'sensitivity'))})" if b3_top_auc else "")
     para(doc,
          "Transfer learning dominates the comparison "
          f"(Table 2): EfficientNet-B0 reaches a test QWK of "
-         f"{f3(metric(b0, 'test_qwk'))} versus "
-         f"{f3(metric(sc, 'test_qwk'))} for the identical training procedure "
+         f"{f3(qwks[b0])} versus "
+         f"{f3(qwks[sc])} for the identical training procedure "
          "with a randomly initialised ResNet-18. "
-         f"EfficientNet-B3, despite 2.7× more parameters and higher input "
-         f"resolution, matched rather than beat B0 (QWK "
-         f"{f3(metric(b3, 'test_qwk'))} vs {f3(metric(b0, 'test_qwk'))}) and "
-         "scored a lower macro F1 — at this dataset size the additional "
-         "capacity brings no reliable gain in grading, although B3 did achieve "
-         f"the highest referable-DR AUC ({f3(metric(b3, 'referable', 'auc'))}) "
-         f"and sensitivity ({pct(metric(b3, 'referable', 'sensitivity'))}). "
+         f"EfficientNet-B3, despite {PARAMS_M[b3] / PARAMS_M[b0]:.1f}× more "
+         f"parameters and higher input resolution, {b3_word} B0 (QWK "
+         f"{f3(qwks[b3])} vs {f3(qwks[b0])}) and "
+         f"scored a {f1_word} macro F1 — at this dataset size the additional "
+         f"capacity brings no reliable gain in grading{b3_clause}. "
          "The learning curves (Figure 3) show that the pretrained model "
          f"reaches its best validation QWK "
          f"({f3((h0.get('best_val_qwk')))}) after only "
@@ -420,13 +467,15 @@ def build() -> None:
           "Table 3. Ablation of Ben Graham illumination normalisation "
           "(EfficientNet-B0, identical training).")
     h_pl = load(pl, "history.json") or {}
+    d_abl = delta(qwks[pl], qwks[b0])
+    abl_word = "higher" if d_abl is None or d_abl >= 0 else "lower"
     para(doc,
          "Contrary to expectation, Ben Graham normalisation brought no "
-         f"benefit: the plain variant scored marginally higher on test QWK "
-         f"({f3(metric(pl, 'test_qwk'))} vs {f3(metric(b0, 'test_qwk'))}) "
+         f"benefit: the plain variant scored marginally {abl_word} on test "
+         f"QWK ({f3(qwks[pl])} vs {f3(qwks[b0])}) "
          f"with validation performance effectively tied "
          f"({f3(h_pl.get('best_val_qwk'))} vs "
-         f"{f3((load(b0, 'history.json') or {}).get('best_val_qwk'))}), so the "
+         f"{f3(h0.get('best_val_qwk'))}), so the "
          "honest conclusion is that the technique does not help an ImageNet-"
          "pretrained network on this dataset, and the small test-set gap is "
          "within seed-level noise. A plausible explanation is that the "
@@ -465,20 +514,31 @@ def build() -> None:
     doc.add_heading("4.4 Referable-DR screening view", level=2)
     ref = metric(b0, "referable") or {}
     ref_pl = metric(pl, "referable") or {}
+    b0_short = bda_shortfall(ref)
+    pl_short = bda_shortfall(ref_pl)
+    b0_verdict = ("meeting the British Diabetic Association screening "
+                  "standard (≥80% sensitivity, ≥95% specificity)"
+                  if b0_short is None else
+                  "narrowly missing the British Diabetic Association "
+                  "screening standard (≥80% sensitivity, ≥95% "
+                  f"specificity) on {b0_short}")
+    pl_verdict = ("meets both targets untuned" if pl_short is None
+                  else f"misses the standard on {pl_short}")
+    tl_aucs = [a for r, a in aucs.items() if r != sc and a is not None]
+    auc_span = f"{min(tl_aucs):.3f}–{max(tl_aucs):.3f}" if tl_aucs else PEND
     para(doc,
          "Collapsed to the binary referable decision, EfficientNet-B0 (Ben "
          f"Graham) achieves {pct(ref.get('sensitivity'))} sensitivity and "
          f"{pct(ref.get('specificity'))} specificity at the default 0.5 "
-         f"operating point (AUC {f3(ref.get('auc'))}), narrowly missing the "
-         "British Diabetic Association screening standard (≥80% "
-         "sensitivity, ≥95% specificity) on specificity. The plain-"
-         f"preprocessing variant meets both targets untuned "
+         f"operating point (AUC {f3(ref.get('auc'))}), {b0_verdict}. The "
+         f"plain-preprocessing variant {pl_verdict} "
          f"({pct(ref_pl.get('sensitivity'))} / "
-         f"{pct(ref_pl.get('specificity'))}), and the near-identical AUCs "
-         "show every variant could reach the standard by tuning the operating "
-         "point on the validation set — a deployment decision that trades "
-         "referral workload against missed disease. That models trained on "
-         "~2,500 images approach screening-standard operating characteristics "
+         f"{pct(ref_pl.get('specificity'))}), and the near-identical AUCs of "
+         f"the transfer-learned variants ({auc_span}) suggest each of them "
+         "could reach the standard by tuning the operating point on the "
+         "validation set — a deployment decision that trades referral "
+         "workload against missed disease. That models trained on ~2,500 "
+         "images approach screening-standard operating characteristics "
          "underlines how much of the task pretrained features already "
          "capture.")
 
@@ -504,23 +564,22 @@ def build() -> None:
 
     # ---- 5 Discussion
     doc.add_heading("5. Discussion", level=1)
-    qwk_gain = None
-    if isinstance(metric(b0, "test_qwk"), float) and isinstance(metric(sc, "test_qwk"), float):
-        qwk_gain = metric(b0, "test_qwk") - metric(sc, "test_qwk")
+    qwk_gain = delta(qwks[b0], qwks[sc])
     para(doc,
-         "Interpretation. The results quantify three design decisions. "
-         f"First, transfer learning is worth {f3(qwk_gain)} QWK over training "
-         "from scratch with an otherwise identical procedure — at this "
-         "dataset size it is the single most consequential choice made. "
-         "Second, neither scaling up the architecture (B3) nor the classical "
-         "Ben Graham preprocessing improved five-class grading: with strong "
-         "pretrained features and only ~2,500 training images, the binding "
-         "constraint is data, not model capacity or input normalisation. "
-         "Third, class-weighted training kept minority-grade recall usable "
-         "(the scratch baseline's macro F1 of "
-         f"{f3(metric(sc, 'macro_f1'))} vs "
-         f"{f3(metric(b0, 'macro_f1'))} shows the gap pretrained features "
-         "close on rare classes). "
+         "Interpretation. The results quantify the project's design "
+         f"decisions. First, transfer learning is worth {f3(qwk_gain)} QWK "
+         "over training from scratch with an otherwise identical procedure "
+         "— at this dataset size it is the single most consequential "
+         "choice made, and the macro-F1 gap between the scratch and "
+         f"pretrained models ({f3(metric(sc, 'macro_f1'))} vs "
+         f"{f3(metric(b0, 'macro_f1'))}) shows that its benefit is "
+         "concentrated in the rare grades. Second, neither scaling up the "
+         "architecture (B3) nor the classical Ben Graham preprocessing "
+         "improved five-class grading: with strong pretrained features and "
+         "only ~2,500 training images, the binding constraint is data, not "
+         "model capacity or input normalisation. Class weighting itself was "
+         "held constant across all runs, so its individual contribution was "
+         "not ablated; isolating it is noted as future work. "
          "« Add a sentence of your own overall reading here. »")
     para(doc,
          "Right answers for wrong reasons. The most important finding of "
@@ -567,10 +626,11 @@ def build() -> None:
          "This project built a complete, reproducible pipeline for five-class "
          "DR grading and referable-DR screening on APTOS 2019, comparing "
          "scratch and transfer-learned CNNs with a controlled preprocessing "
-         f"ablation. The best model reached a test QWK of "
-         f"{f3(metric(pl, 'test_qwk'))} and met the BDA screening standard "
-         f"({pct(metric(pl, 'referable', 'sensitivity'))} sensitivity, "
-         f"{pct(metric(pl, 'referable', 'specificity'))} specificity) at an "
+         f"ablation. The best configuration ({RUNS[best]}) reached a test "
+         f"QWK of {f3(qwks[best])} and "
+         f"{'met' if best_bda is None else 'approached'} the BDA screening "
+         f"standard ({pct(best_ref.get('sensitivity'))} sensitivity, "
+         f"{pct(best_ref.get('specificity'))} specificity) at an "
          "untuned operating point, with ~2,500 training images. Beyond the "
          "metrics, the experiments produced two less obvious lessons: an "
          "inherited preprocessing technique added nothing once transfer "
