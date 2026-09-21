@@ -1,6 +1,6 @@
-# data and outputs are reproducible — never commit them
+# data is re-downloadable — never commit it; results (metrics, figures) are
+# committed so markers can see them, but model weights stay out
 data/
-outputs/
 *.pt
 *.zip
 

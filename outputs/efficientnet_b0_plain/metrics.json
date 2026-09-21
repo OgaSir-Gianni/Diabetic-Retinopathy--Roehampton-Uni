@@ -1,0 +1,25 @@
+{
+  "run": "efficientnet_b0_plain",
+  "test_qwk": 0.8818557754760892,
+  "test_accuracy": 0.7890909090909091,
+  "macro_f1": 0.6387209154765335,
+  "per_class_f1": {
+    "No DR": 0.9777777777777777,
+    "Mild": 0.59375,
+    "Moderate": 0.7032967032967034,
+    "Severe": 0.4044943820224719,
+    "Proliferative": 0.5142857142857142
+  },
+  "referable": {
+    "sensitivity": 0.8789237668161435,
+    "specificity": 0.9541284403669725,
+    "auc": 0.9775784753363228,
+    "confusion": {
+      "tp": 196,
+      "fp": 15,
+      "tn": 312,
+      "fn": 27
+    }
+  },
+  "n_test": 550
+}

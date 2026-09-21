@@ -384,7 +384,8 @@ def build() -> None:
          "clinically label-preserving: random flips, rotation, small crops "
          "and mild brightness/contrast jitter (fundus orientation carries no "
          "diagnostic meaning). The checkpoint with the best validation QWK is "
-         "kept. All code, seeds and per-run configurations are available in "
+         "kept. All models and training code are implemented in PyTorch [9]. "
+         "All code, seeds and per-run configurations are available in "
          f"the repository ({REPO_URL}), and the accompanying Colab notebook "
          "reproduces the full pipeline end-to-end.")
 
@@ -471,7 +472,7 @@ def build() -> None:
     abl_word = "higher" if d_abl is None or d_abl >= 0 else "lower"
     para(doc,
          "Contrary to expectation, Ben Graham normalisation brought no "
-         f"benefit: the plain variant scored marginally {abl_word} on test "
+         f"benefit (Table 3): the plain variant scored marginally {abl_word} on test "
          f"QWK ({f3(qwks[pl])} vs {f3(qwks[b0])}) "
          f"with validation performance effectively tied "
          f"({f3(h_pl.get('best_val_qwk'))} vs "
@@ -547,7 +548,7 @@ def build() -> None:
     para(doc,
          "Grad-CAM heatmaps were generated for the highest-confidence correct "
          "prediction of each grade and for the most confident "
-         "misclassifications. "
+         "misclassifications (Figures 5 and 6). "
          "« Describe what you see in the final panels. From the current "
          "run: for correctly-classified proliferative cases the attention "
          "concentrates on panretinal photocoagulation laser scars — "

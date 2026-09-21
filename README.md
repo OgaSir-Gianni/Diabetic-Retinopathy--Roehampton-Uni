@@ -41,8 +41,12 @@ dr-detection/
 │   └── utils.py         # seeding, device selection, plotting
 ├── scripts/
 │   ├── download_data.py   # Kaggle download + verification
-│   └── preprocess_data.py # build cached preprocessed image sets
-├── report/report_outline.md
+│   ├── preprocess_data.py # build cached preprocessed image sets
+│   └── make_figures.py    # report figures (class distribution, preprocessing)
+├── tests/smoke_test.py    # fast end-to-end pipeline check (no GPU needed)
+├── outputs/               # committed results: metrics, learning curves,
+│                          # confusion matrices, Grad-CAM panels (weights excluded)
+├── report/                # report outline + docx builder
 └── requirements.txt
 ```
 
